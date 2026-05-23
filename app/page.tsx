@@ -1,65 +1,190 @@
-import Image from "next/image";
+'use client';
 
-export default function Home() {
+import { useState, useMemo, useCallback, useEffect } from 'react';
+import { STOCKS as MOCK_STOCKS } from '@/lib/mockData';
+import { Stock, SortField, SortDirection, Filters, Recommendation } from '@/types/stock';
+import Header from '@/components/Header';
+import ControlPanel from '@/components/ControlPanel';
+import OpportunitiesHighlight from '@/components/OpportunitiesHighlight';
+import StockTable from '@/components/StockTable';
+import DetailView from '@/components/DetailView';
+
+const ALL_RECS: Recommendation[] = ['Strong Buy', 'Buy', 'Hold', 'Sell', 'Strong Sell'];
+
+const DEFAULT_FILTERS: Filters = {
+  search: '',
+  minUpside: '',
+  maxUpside: '',
+  minPE: '',
+  maxPE: '',
+  recommendations: [...ALL_RECS],
+};
+
+type DataSource = 'loading' | 'live' | 'mock';
+
+function TableSkeleton() {
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
+    <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl overflow-hidden">
+      <div className="animate-pulse p-4 space-y-3">
+        {Array.from({ length: 10 }).map((_, i) => (
+          <div key={i} className="flex gap-4 items-center">
+            <div className="w-6 h-4 bg-gray-200 dark:bg-gray-700 rounded" />
+            <div className="w-16 h-4 bg-gray-200 dark:bg-gray-700 rounded" />
+            <div className="flex-1 h-4 bg-gray-100 dark:bg-gray-800 rounded" />
+            <div className="w-20 h-4 bg-gray-200 dark:bg-gray-700 rounded" />
+            <div className="w-20 h-4 bg-gray-200 dark:bg-gray-700 rounded" />
+            <div className="w-16 h-4 bg-gray-200 dark:bg-gray-700 rounded" />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+export default function Dashboard() {
+  const [stocks, setStocks] = useState<Stock[]>([]);
+  const [dataSource, setDataSource] = useState<DataSource>('loading');
+  const [selectedStock, setSelectedStock] = useState<Stock | null>(null);
+  const [sortField, setSortField] = useState<SortField>('upside');
+  const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
+  const [filters, setFilters] = useState<Filters>(DEFAULT_FILTERS);
+  const [lastUpdated, setLastUpdated] = useState(new Date());
+  const [isLoading, setIsLoading] = useState(false);
+
+  const fetchStocks = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      const res = await fetch('/api/stocks');
+      if (!res.ok) throw new Error('API error ' + res.status);
+      const data: Stock[] = await res.json();
+      setStocks(data);
+      setDataSource('live');
+      setLastUpdated(new Date());
+    } catch (err) {
+      console.error('Failed to fetch live data, using mock:', err);
+      setStocks(MOCK_STOCKS);
+      setDataSource('mock');
+      setLastUpdated(new Date());
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchStocks();
+  }, [fetchStocks]);
+
+  useEffect(() => {
+    const interval = setInterval(fetchStocks, 15 * 60 * 1000);
+    return () => clearInterval(interval);
+  }, [fetchStocks]);
+
+  const handleSort = useCallback((field: SortField) => {
+    setSortField(prev => {
+      if (prev === field) {
+        setSortDirection(d => d === 'asc' ? 'desc' : 'asc');
+        return field;
+      }
+      setSortDirection('desc');
+      return field;
+    });
+  }, []);
+
+  const filteredAndSorted = useMemo(() => {
+    const search = filters.search.toLowerCase();
+    const minUpside = filters.minUpside !== '' ? parseFloat(filters.minUpside) : -Infinity;
+    const maxUpside = filters.maxUpside !== '' ? parseFloat(filters.maxUpside) : Infinity;
+    const minPE = filters.minPE !== '' ? parseFloat(filters.minPE) : -Infinity;
+    const maxPE = filters.maxPE !== '' ? parseFloat(filters.maxPE) : Infinity;
+
+    const filtered = stocks.filter(s => {
+      if (search && !s.ticker.toLowerCase().includes(search) && !s.name.toLowerCase().includes(search)) return false;
+      if (s.upside < minUpside || s.upside > maxUpside) return false;
+      if (filters.minPE || filters.maxPE) {
+        if (s.pe === null) return false;
+        if (s.pe < minPE || s.pe > maxPE) return false;
+      }
+      if (!filters.recommendations.includes(s.recommendation)) return false;
+      return true;
+    });
+
+    return filtered.sort((a, b) => {
+      let aVal: number, bVal: number;
+      switch (sortField) {
+        case 'upside': aVal = a.upside; bVal = b.upside; break;
+        case 'change24h': aVal = a.change24h; bVal = b.change24h; break;
+        case 'pe': aVal = a.pe ?? -Infinity; bVal = b.pe ?? -Infinity; break;
+        case 'currentPrice': aVal = a.currentPrice; bVal = b.currentPrice; break;
+        case 'priceTarget': aVal = a.priceTarget; bVal = b.priceTarget; break;
+        default: aVal = a.upside; bVal = b.upside;
+      }
+      return sortDirection === 'asc' ? aVal - bVal : bVal - aVal;
+    });
+  }, [stocks, filters, sortField, sortDirection]);
+
+  return (
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-950">
+      <Header
+        lastUpdated={lastUpdated}
+        onRefresh={fetchStocks}
+        isLoading={isLoading}
+        dataSource={dataSource}
+      />
+
+      <main className="max-w-screen-2xl mx-auto px-4 sm:px-6 py-6 space-y-5">
+        <div>
+          <h2 className="text-xl font-bold text-gray-900 dark:text-white">Investment Opportunities</h2>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">
+            Top 20 US stocks ranked by analyst consensus and upside potential
           </p>
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
+
+        {dataSource === 'loading' ? (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            {[0, 1].map(i => (
+              <div key={i} className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl p-4 animate-pulse">
+                <div className="w-40 h-4 bg-gray-200 dark:bg-gray-700 rounded mb-4" />
+                {Array.from({ length: 5 }).map((_, j) => (
+                  <div key={j} className="flex gap-3 py-2">
+                    <div className="w-6 h-6 rounded-full bg-gray-200 dark:bg-gray-700" />
+                    <div className="flex-1 h-4 bg-gray-100 dark:bg-gray-800 rounded" />
+                    <div className="w-16 h-4 bg-gray-200 dark:bg-gray-700 rounded" />
+                  </div>
+                ))}
+              </div>
+            ))}
+          </div>
+        ) : (
+          <OpportunitiesHighlight stocks={stocks} onSelectStock={setSelectedStock} />
+        )}
+
+        <div className="space-y-3">
+          <ControlPanel filters={filters} onChange={setFilters} />
+          {dataSource === 'loading' ? (
+            <TableSkeleton />
+          ) : (
+            <StockTable
+              stocks={filteredAndSorted}
+              sortField={sortField}
+              sortDirection={sortDirection}
+              onSort={handleSort}
+              onSelectStock={setSelectedStock}
             />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
+          )}
         </div>
       </main>
+
+      <footer className="max-w-screen-2xl mx-auto px-4 sm:px-6 py-4 border-t border-gray-200 dark:border-gray-800 mt-6">
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-2 text-xs text-gray-400 dark:text-gray-500">
+          <span>StockVision · Datos con fines informativos. No constituye asesoramiento financiero.</span>
+          <span>
+            {dataSource === 'live' ? '🟢 Datos en vivo · ' : dataSource === 'mock' ? '🟡 Datos mock · ' : ''}
+            Última actualización: {lastUpdated.toLocaleString()}
+          </span>
+        </div>
+      </footer>
+
+      <DetailView stock={selectedStock} onClose={() => setSelectedStock(null)} />
     </div>
   );
 }
