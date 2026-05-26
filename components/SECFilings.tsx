@@ -38,7 +38,6 @@ function FilingRow({ filing, ticker }: { filing: SECFiling; ticker: string }) {
       url.searchParams.set('accession', filing.accessionNumber);
       url.searchParams.set('form', filing.form);
       url.searchParams.set('date', filing.filingDate);
-      url.searchParams.set('doc', filing.primaryDocument);
 
       const res = await fetch(url.toString());
       if (!res.ok) throw new Error('Error ' + res.status);
