@@ -1,13 +1,13 @@
 'use client';
 
 import { useState, useMemo, useCallback, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { STOCKS as MOCK_STOCKS } from '@/lib/mockData';
 import { Stock, SortField, SortDirection, Filters, Recommendation } from '@/types/stock';
 import Header from '@/components/Header';
 import ControlPanel from '@/components/ControlPanel';
 import OpportunitiesHighlight from '@/components/OpportunitiesHighlight';
 import StockTable from '@/components/StockTable';
-import DetailView from '@/components/DetailView';
 
 const ALL_RECS: Recommendation[] = ['Strong Buy', 'Buy', 'Hold', 'Sell', 'Strong Sell'];
 
@@ -21,6 +21,11 @@ const DEFAULT_FILTERS: Filters = {
 };
 
 type DataSource = 'loading' | 'live' | 'mock';
+
+function navigateToStock(stock: Stock, router: ReturnType<typeof useRouter>) {
+  try { sessionStorage.setItem('selectedStock', JSON.stringify(stock)); } catch {}
+  router.push(`/stock/${stock.ticker}`);
+}
 
 function TableSkeleton() {
   return (
@@ -42,9 +47,9 @@ function TableSkeleton() {
 }
 
 export default function Dashboard() {
+  const router = useRouter();
   const [stocks, setStocks] = useState<Stock[]>([]);
   const [dataSource, setDataSource] = useState<DataSource>('loading');
-  const [selectedStock, setSelectedStock] = useState<Stock | null>(null);
   const [sortField, setSortField] = useState<SortField>('upside');
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
   const [filters, setFilters] = useState<Filters>(DEFAULT_FILTERS);
@@ -155,7 +160,7 @@ export default function Dashboard() {
             ))}
           </div>
         ) : (
-          <OpportunitiesHighlight stocks={stocks} onSelectStock={setSelectedStock} />
+          <OpportunitiesHighlight stocks={stocks} onSelectStock={s => navigateToStock(s, router)} />
         )}
 
         <div className="space-y-3">
@@ -168,7 +173,7 @@ export default function Dashboard() {
               sortField={sortField}
               sortDirection={sortDirection}
               onSort={handleSort}
-              onSelectStock={setSelectedStock}
+              onSelectStock={s => navigateToStock(s, router)}
             />
           )}
         </div>
@@ -184,7 +189,6 @@ export default function Dashboard() {
         </div>
       </footer>
 
-      <DetailView stock={selectedStock} onClose={() => setSelectedStock(null)} />
     </div>
   );
 }
