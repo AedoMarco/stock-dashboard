@@ -1,6 +1,7 @@
 export interface HistoricalPrice {
   date: string;
   close: number;
+  volume?: number;
 }
 
 export interface AnalystTargets {

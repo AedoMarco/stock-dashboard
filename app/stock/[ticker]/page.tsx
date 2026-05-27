@@ -3,10 +3,13 @@
 import { useEffect, useState, use } from 'react';
 import { useRouter } from 'next/navigation';
 import {
-  ArrowLeft, TrendingUp, TrendingDown, BarChart3, Users, Brain, ChevronRight, RefreshCw,
+  ArrowLeft, TrendingUp, TrendingDown, BarChart3, Users, Brain, ChevronRight, RefreshCw, Activity,
 } from 'lucide-react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { Stock, Recommendation } from '@/types/stock';
 import { ForecastPoint, ForecastModel } from '@/lib/forecast';
+import { scoreLabel, type FactorScores } from '@/lib/multiFactor';
 import { formatPercent } from '@/lib/calculations';
 import StockChart from '@/components/StockChart';
 import AnalystHistory from '@/components/AnalystHistory';
@@ -47,6 +50,124 @@ function ForecastMetric({ label, value, pct }: { label: string; value: number; p
       <p className={`text-sm font-semibold ${positive ? 'text-emerald-500' : 'text-red-400'}`}>
         {formatPercent(pct)}
       </p>
+    </div>
+  );
+}
+
+// ─── Factor Breakdown panel ────────────────────────────────────────────────
+
+function ScoreBar({ label, score, color }: { label: string; score: number; color: string }) {
+  const pct = Math.round((score + 1) / 2 * 100); // map -1…+1 → 0…100
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-1.5">
+        <span className="text-xs font-medium text-gray-600 dark:text-gray-400">{label}</span>
+        <span className={`text-xs font-bold ${score >= 0 ? 'text-emerald-500' : 'text-red-400'}`}>
+          {scoreLabel(score)}
+        </span>
+      </div>
+      <div className="relative h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+        {/* center marker */}
+        <div className="absolute left-1/2 top-0 h-full w-px bg-gray-400 dark:bg-gray-500 z-10" />
+        {score >= 0 ? (
+          <div
+            className={`absolute top-0 left-1/2 h-full rounded-r-full ${color}`}
+            style={{ width: `${Math.abs(score) * 50}%` }}
+          />
+        ) : (
+          <div
+            className={`absolute top-0 right-1/2 h-full rounded-l-full ${color}`}
+            style={{ width: `${Math.abs(score) * 50}%` }}
+          />
+        )}
+      </div>
+      <div className="flex justify-between mt-0.5">
+        <span className="text-[10px] text-gray-400">Muy Bajista</span>
+        <span className="text-[10px] text-gray-400">Muy Alcista</span>
+      </div>
+    </div>
+  );
+}
+
+function FactorBreakdown({ fs, annualReturnPct, annualVolPct }: {
+  fs: FactorScores;
+  annualReturnPct?: number;
+  annualVolPct?: number;
+}) {
+  const compositeColor = fs.composite >= 0 ? 'text-emerald-500' : 'text-red-400';
+
+  return (
+    <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl p-5 space-y-5">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <Activity size={15} className="text-blue-500" />
+          <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Análisis Multi-Factor</h3>
+          <span className="text-xs bg-blue-500/10 text-blue-500 px-1.5 py-0.5 rounded">
+            Técnico · Fundamental · Macro
+          </span>
+        </div>
+        <span className={`text-sm font-bold ${compositeColor}`}>
+          {scoreLabel(fs.composite)}
+        </span>
+      </div>
+
+      {/* Three factor bars */}
+      <div className="space-y-4">
+        <ScoreBar label="Técnico (40%)"     score={fs.technical}   color="bg-blue-500" />
+        <ScoreBar label="Fundamental (40%)" score={fs.fundamental} color="bg-violet-500" />
+        <ScoreBar label="Macro (20%)"       score={fs.macro}       color="bg-amber-500" />
+      </div>
+
+      {/* Composite + model stats */}
+      <div className="flex flex-wrap gap-3 pt-2 border-t border-gray-100 dark:border-gray-800">
+        <div className="text-center bg-gray-50 dark:bg-gray-800/60 rounded-lg px-4 py-2 flex-1 min-w-[100px]">
+          <p className="text-[10px] text-gray-400 mb-0.5">Score compuesto</p>
+          <p className={`text-lg font-bold font-mono ${compositeColor}`}>
+            {fs.composite >= 0 ? '+' : ''}{(fs.composite * 100).toFixed(0)}
+          </p>
+        </div>
+        {annualReturnPct !== undefined && (
+          <div className="text-center bg-gray-50 dark:bg-gray-800/60 rounded-lg px-4 py-2 flex-1 min-w-[100px]">
+            <p className="text-[10px] text-gray-400 mb-0.5">Retorno anual esperado</p>
+            <p className={`text-lg font-bold font-mono ${annualReturnPct >= 0 ? 'text-emerald-500' : 'text-red-400'}`}>
+              {annualReturnPct >= 0 ? '+' : ''}{annualReturnPct}%
+            </p>
+          </div>
+        )}
+        {annualVolPct !== undefined && (
+          <div className="text-center bg-gray-50 dark:bg-gray-800/60 rounded-lg px-4 py-2 flex-1 min-w-[100px]">
+            <p className="text-[10px] text-gray-400 mb-0.5">Volatilidad anual</p>
+            <p className="text-lg font-bold font-mono text-gray-700 dark:text-gray-300">{annualVolPct}%</p>
+          </div>
+        )}
+      </div>
+
+      {/* Active signals */}
+      {fs.signals.length > 0 && (
+        <div className="pt-2 border-t border-gray-100 dark:border-gray-800 space-y-1.5">
+          <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">
+            Señales activas
+          </p>
+          {fs.signals.map((sig, i) => {
+            const isPositive = sig.toLowerCase().includes('fuerte') || sig.toLowerCase().includes('creciendo') ||
+              sig.toLowerCase().includes('golden') || sig.toLowerCase().includes('alcista') ||
+              sig.toLowerCase().includes('favorable') || sig.toLowerCase().includes('rebote') ||
+              sig.toLowerCase().includes('upside') || sig.toLowerCase().includes('acelerac');
+            const isNegative = sig.toLowerCase().includes('death') || sig.toLowerCase().includes('bajista') ||
+              sig.toLowerCase().includes('presión') || sig.toLowerCase().includes('elevado') ||
+              sig.toLowerCase().includes('alto') || sig.toLowerCase().includes('cayendo') ||
+              sig.toLowerCase().includes('declive') || sig.toLowerCase().includes('pánico') ||
+              sig.toLowerCase().includes('negativo') || sig.toLowerCase().includes('vendedora');
+            const icon = isPositive ? '🟢' : isNegative ? '🔴' : '🟡';
+            return (
+              <div key={i} className="flex items-start gap-2 text-xs text-gray-600 dark:text-gray-400">
+                <span className="flex-shrink-0">{icon}</span>
+                <span>{sig}</span>
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
@@ -338,38 +459,37 @@ export default function StockDetailPage({ params }: { params: Promise<{ ticker: 
 
         {forecastData && (
           <div className="space-y-4">
+            {/* Factor breakdown */}
+            {forecastData.forecast.factorScores && (
+              <FactorBreakdown
+                fs={forecastData.forecast.factorScores}
+                annualReturnPct={forecastData.forecast.annualReturnPct}
+                annualVolPct={forecastData.forecast.annualVolPct}
+              />
+            )}
+
+            {/* Price projections */}
             <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl p-5">
               <div className="flex items-center justify-between mb-4">
                 <div className="flex items-center gap-2">
                   <Brain size={15} className="text-violet-500" />
-                  <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Proyección Estadística</h3>
+                  <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Proyección de Precio</h3>
                 </div>
                 <span className="text-xs text-gray-400 bg-gray-100 dark:bg-gray-800 px-2 py-0.5 rounded-full">
-                  R² {(forecastData.forecast.r2 * 100).toFixed(0)}%
+                  IC 90% · vol {forecastData.forecast.annualVolPct ?? (forecastData.forecast.r2 * 100).toFixed(0)}%
                 </span>
               </div>
               <div className="grid grid-cols-3 gap-4">
-                <ForecastMetric
-                  label="30 días"
-                  value={forecastData.forecast.expected30d}
-                  pct={forecastData.forecast.return30d}
-                />
-                <ForecastMetric
-                  label="60 días"
-                  value={forecastData.forecast.expected60d}
-                  pct={(forecastData.forecast.expected60d - stock.currentPrice) / stock.currentPrice * 100}
-                />
-                <ForecastMetric
-                  label="90 días"
-                  value={forecastData.forecast.expected90d}
-                  pct={forecastData.forecast.return90d}
-                />
+                <ForecastMetric label="30 días" value={forecastData.forecast.expected30d} pct={forecastData.forecast.return30d} />
+                <ForecastMetric label="60 días" value={forecastData.forecast.expected60d} pct={(forecastData.forecast.expected60d - stock.currentPrice) / stock.currentPrice * 100} />
+                <ForecastMetric label="90 días" value={forecastData.forecast.expected90d} pct={forecastData.forecast.return90d} />
               </div>
               <p className="text-xs text-gray-400 dark:text-gray-500 mt-4">
-                Modelo Holt&apos;s double exponential smoothing · Banda de confianza 90%
+                {forecastData.forecast.method ?? 'Modelo estadístico'} · Log-normal · IC 90%
               </p>
             </div>
 
+            {/* Claude narrative */}
             <div className="bg-gradient-to-br from-violet-50 to-blue-50 dark:from-violet-950/30 dark:to-blue-950/30 border border-violet-200 dark:border-violet-800/50 rounded-xl p-5">
               <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-2">
@@ -379,18 +499,25 @@ export default function StockDetailPage({ params }: { params: Promise<{ ticker: 
                 </div>
                 <div className="flex items-center gap-2">
                   {forecastData.cached && <span className="text-xs text-gray-400">caché</span>}
-                  <button
-                    onClick={fetchForecast}
-                    className="p-1 rounded hover:bg-violet-100 dark:hover:bg-violet-900/30 text-gray-400 hover:text-violet-500 transition-colors"
-                    title="Regenerar análisis"
-                  >
+                  <button onClick={fetchForecast} className="p-1 rounded hover:bg-violet-100 dark:hover:bg-violet-900/30 text-gray-400 hover:text-violet-500 transition-colors" title="Regenerar">
                     <RefreshCw size={13} />
                   </button>
                 </div>
               </div>
-              <p className="text-sm text-gray-700 dark:text-gray-300 leading-relaxed whitespace-pre-line">
+              <ReactMarkdown
+                remarkPlugins={[remarkGfm]}
+                components={{
+                  h1: ({ children }) => <h1 className="text-base font-bold text-gray-900 dark:text-white mt-3 mb-2 first:mt-0">{children}</h1>,
+                  h2: ({ children }) => <h2 className="text-sm font-bold text-gray-900 dark:text-white mt-3 mb-1.5 first:mt-0">{children}</h2>,
+                  h3: ({ children }) => <h3 className="text-sm font-semibold text-violet-700 dark:text-violet-300 mt-2 mb-1">{children}</h3>,
+                  p: ({ children }) => <p className="text-sm text-gray-700 dark:text-gray-300 leading-relaxed mb-2 last:mb-0">{children}</p>,
+                  strong: ({ children }) => <strong className="font-semibold text-gray-900 dark:text-white">{children}</strong>,
+                  ul: ({ children }) => <ul className="list-disc list-inside mb-2 space-y-0.5 text-sm text-gray-700 dark:text-gray-300">{children}</ul>,
+                  li: ({ children }) => <li className="leading-relaxed">{children}</li>,
+                }}
+              >
                 {forecastData.analysis}
-              </p>
+              </ReactMarkdown>
               <p className="text-xs text-gray-400 dark:text-gray-500 mt-3">
                 Generado el {forecastData.analysisDate} · Solo con fines informativos
               </p>

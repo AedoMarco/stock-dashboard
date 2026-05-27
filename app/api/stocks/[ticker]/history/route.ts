@@ -3,7 +3,7 @@ import YahooFinanceClass from 'yahoo-finance2';
 
 const yf = new YahooFinanceClass({ suppressNotices: ['yahooSurvey'] });
 
-interface PricePoint { date: string; close: number }
+interface PricePoint { date: string; close: number; volume?: number }
 interface CacheEntry { data: PricePoint[]; timestamp: number }
 
 const historyCache = new Map<string, CacheEntry>();
@@ -36,6 +36,7 @@ export async function GET(
       .map(d => ({
         date: d.date.toISOString().split('T')[0],
         close: parseFloat(((d.adjClose ?? d.close) as number).toFixed(2)),
+        volume: d.volume ?? undefined,
       }));
 
     historyCache.set(ticker, { data, timestamp: Date.now() });

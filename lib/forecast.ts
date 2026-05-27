@@ -15,6 +15,11 @@ export interface ForecastModel {
   expected90d: number;
   return30d: number;
   return90d: number;
+  // Extended by multi-factor model
+  factorScores?: import('./multiFactor').FactorScores;
+  method?: string;
+  annualReturnPct?: number;
+  annualVolPct?: number;
 }
 
 function holtsSmoothing(prices: number[], alpha = 0.25, beta = 0.08) {

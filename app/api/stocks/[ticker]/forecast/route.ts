@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import YahooFinanceClass from 'yahoo-finance2';
 import Anthropic from '@anthropic-ai/sdk';
-import { computeForecast, ForecastModel } from '@/lib/forecast';
+import { ForecastModel } from '@/lib/forecast';
+import { computeMultiFactorForecast, scoreLabel, type FundamentalInput, type MacroInput } from '@/lib/multiFactor';
 import type { Recommendation } from '@/types/stock';
 
 const yf = new YahooFinanceClass({ suppressNotices: ['yahooSurvey'] });
@@ -16,12 +17,6 @@ interface CacheEntry {
 const forecastCache = new Map<string, CacheEntry>();
 const CACHE_TTL = 24 * 60 * 60 * 1000;
 
-function computeMA(prices: number[], period: number): number | null {
-  if (prices.length < period) return null;
-  const slice = prices.slice(-period);
-  return parseFloat((slice.reduce((a, b) => a + b, 0) / period).toFixed(2));
-}
-
 function mapRecommendation(mean?: number | null): Recommendation {
   if (!mean) return 'Hold';
   if (mean <= 1.5) return 'Strong Buy';
@@ -35,53 +30,58 @@ async function generateAnalysis(
   ticker: string,
   name: string,
   currentPrice: number,
-  priceTarget: number,
-  upside: number,
-  recommendation: string,
-  change24h: number,
-  pe: number | null,
-  numAnalysts: number,
-  history: { date: string; close: number }[],
-  model: ForecastModel
+  model: ForecastModel,
+  fund: FundamentalInput,
+  macro: MacroInput,
 ): Promise<string> {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey || apiKey.includes('sk-ant-...')) {
     return '⚙️ Agrega ANTHROPIC_API_KEY en .env.local para habilitar el análisis IA.';
   }
 
-  const prices = history.map(h => h.close);
-  const ma50 = computeMA(prices, 50);
-  const ma200 = computeMA(prices, 200);
-  const price6mAgo = history[Math.max(0, history.length - 130)]?.close ?? currentPrice;
-  const trend6m = ((currentPrice - price6mAgo) / price6mAgo * 100).toFixed(1);
-  const maSignal = ma50 && ma200
-    ? (ma50 > ma200 ? 'Golden Cross (alcista)' : 'Death Cross (bajista)')
-    : 'insuficientes datos';
+  const fs = model.factorScores;
+  const signalsList = fs?.signals.slice(0, 6).map(s => `  • ${s}`).join('\n') ?? '';
 
-  const prompt = `Eres un analista financiero cuantitativo experto. Analiza el siguiente stock y escribe un análisis de inversión conciso en español (4-5 oraciones, máximo 220 palabras).
+  const prompt = `Eres un analista financiero cuantitativo senior. Analiza el siguiente stock y escribe un análisis de inversión en **español** usando **Markdown** (máx 280 palabras, 4-5 párrafos).
 
-**${name} (${ticker})**
+**${name} (${ticker})** — Precio actual: $${currentPrice.toFixed(2)}
 
-Precio actual: $${currentPrice.toFixed(2)} | Cambio hoy: ${change24h >= 0 ? '+' : ''}${change24h}%
-P/E: ${pe ?? 'N/A (pérdidas)'} | Analistas cubriendo: ${numAnalysts}
-Target consenso analistas: $${priceTarget.toFixed(2)} | Upside: ${upside >= 0 ? '+' : ''}${upside}%
-Recomendación: ${recommendation}
+### Modelo Multi-Factor
+- Score técnico: ${fs ? (fs.technical * 100).toFixed(0) : 'N/A'}/100 (${fs ? scoreLabel(fs.technical) : ''})
+- Score fundamental: ${fs ? (fs.fundamental * 100).toFixed(0) : 'N/A'}/100 (${fs ? scoreLabel(fs.fundamental) : ''})
+- Score macro: ${fs ? (fs.macro * 100).toFixed(0) : 'N/A'}/100 (${fs ? scoreLabel(fs.macro) : ''})
+- Score compuesto: ${fs ? (fs.composite * 100).toFixed(0) : 'N/A'}/100 → **${fs ? scoreLabel(fs.composite) : 'N/A'}**
+- Retorno anual ajustado esperado: ${model.annualReturnPct ?? 'N/A'}%
+- Volatilidad histórica anualizada: ${model.annualVolPct ?? 'N/A'}%
 
-Tendencia 6M: ${Number(trend6m) >= 0 ? '+' : ''}${trend6m}%
-MA50: ${ma50 ? '$' + ma50 : 'N/A'} | MA200: ${ma200 ? '$' + ma200 : 'N/A'}
-Señal técnica: ${maSignal}
+### Señales activas
+${signalsList || '  • Sin señales destacadas'}
 
-Proyección modelo estadístico (Holt's smoothing, bondad R²=${(model.r2 * 100).toFixed(0)}%):
-- 30 días: $${model.expected30d.toFixed(2)} (${model.return30d >= 0 ? '+' : ''}${model.return30d}%)
-- 90 días: $${model.expected90d.toFixed(2)} (${model.return90d >= 0 ? '+' : ''}${model.return90d}%)
-- Tendencia diaria del modelo: ${model.dailyTrend >= 0 ? '+' : ''}$${model.dailyTrend.toFixed(3)}
+### Proyección log-normal 90 días (IC 90%)
+- 30d: $${model.expected30d.toFixed(2)} (${model.return30d >= 0 ? '+' : ''}${model.return30d}%)
+- 60d: $${model.expected60d.toFixed(2)}
+- 90d: $${model.expected90d.toFixed(2)} (${model.return90d >= 0 ? '+' : ''}${model.return90d}%)
 
-Cubre en orden: (1) situación técnica actual, (2) alineación o divergencia entre analistas y modelo estadístico, (3) principal riesgo. Termina con un veredicto claro en negrita: **🟢 COMPRAR**, **🟡 MANTENER**, o **🔴 VENDER** con una justificación de 1 oración.`;
+### Macro
+- Tasa 10Y: ${macro.yield10Y?.toFixed(1) ?? 'N/A'}% | VIX: ${macro.vix?.toFixed(1) ?? 'N/A'} | S&P500 3m: ${macro.sp500Return3m !== null ? (macro.sp500Return3m * 100).toFixed(1) + '%' : 'N/A'}
+
+### Fundamentales
+- Upside analistas: ${fund.analystUpside.toFixed(1)}% | Recomendación: ${fund.recommendation}
+- Revenue growth: ${fund.revenueGrowth !== null ? (fund.revenueGrowth * 100).toFixed(1) + '%' : 'N/A'} | Earnings growth: ${fund.earningsGrowth !== null ? (fund.earningsGrowth * 100).toFixed(1) + '%' : 'N/A'}
+- Margen operacional: ${fund.operatingMargins !== null ? (fund.operatingMargins * 100).toFixed(1) + '%' : 'N/A'}
+
+Estructura tu respuesta así:
+1. Situación técnica actual y momentum
+2. Fortaleza o debilidad fundamental
+3. Contexto macro y su impacto
+4. Veredicto final en negrita: **🟢 COMPRAR**, **🟡 MANTENER** o **🔴 VENDER** con justificación de 1 oración
+
+No uses LaTeX. Solo Markdown estándar.`;
 
   const client = new Anthropic({ apiKey });
   const msg = await client.messages.create({
     model: 'claude-sonnet-4-6',
-    max_tokens: 450,
+    max_tokens: 600,
     messages: [{ role: 'user', content: prompt }],
   });
 
@@ -97,58 +97,86 @@ export async function GET(
 
   const cached = forecastCache.get(ticker);
   if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
-    return NextResponse.json({
-      forecast: cached.forecast,
-      analysis: cached.analysis,
-      analysisDate: cached.analysisDate,
-      cached: true,
-    });
+    return NextResponse.json({ forecast: cached.forecast, analysis: cached.analysis, analysisDate: cached.analysisDate, cached: true });
   }
 
   try {
-    const end = new Date();
-    const start = new Date();
-    start.setFullYear(start.getFullYear() - 1);
+    const today     = new Date();
+    const date1yAgo = new Date(today); date1yAgo.setFullYear(today.getFullYear() - 1);
+    const date70dAgo = new Date(today); date70dAgo.setDate(today.getDate() - 70);
 
-    const [histRaw, quoteSummary] = await Promise.all([
+    type YfBar = { date: Date; close: number | null; adjClose?: number | null; volume?: number | null };
+
+    // Parallel: ticker history + quoteSummary + macro data
+    const [histRaw, quoteSummary, spHistory, tnxQuote, vixQuote] = await Promise.all([
       yf.historical(ticker, {
-        period1: start.toISOString().split('T')[0],
-        period2: end.toISOString().split('T')[0],
+        period1: date1yAgo.toISOString().split('T')[0],
+        period2: today.toISOString().split('T')[0],
         interval: '1d',
+      }) as Promise<YfBar[]>,
+      yf.quoteSummary(ticker, {
+        modules: ['price', 'financialData', 'defaultKeyStatistics'],
       }),
-      yf.quoteSummary(ticker, { modules: ['price', 'financialData'] }),
+      (yf.historical('^GSPC', {
+        period1: date70dAgo.toISOString().split('T')[0],
+        period2: today.toISOString().split('T')[0],
+        interval: '1d',
+      }) as Promise<YfBar[]>).catch((): YfBar[] => []),
+      yf.quote('^TNX').catch(() => null),
+      yf.quote('^VIX').catch(() => null),
     ]);
 
-    const history = histRaw
-      .filter(d => d.close != null)
-      .map(d => ({
-        date: d.date.toISOString().split('T')[0],
-        close: parseFloat(((d.adjClose ?? d.close) as number).toFixed(2)),
+    // Build price bars with volume
+    const bars = histRaw
+      .filter((d: YfBar) => d.close != null)
+      .map((d: YfBar) => ({
+        date:   d.date.toISOString().split('T')[0],
+        close:  parseFloat(((d.adjClose ?? d.close) as number).toFixed(2)),
+        volume: d.volume ?? undefined,
       }));
 
     const price = quoteSummary.price;
-    const fin = quoteSummary.financialData;
+    const fin   = quoteSummary.financialData;
 
-    const currentPrice = price?.regularMarketPrice ?? history[history.length - 1]?.close ?? 0;
-    const priceTarget = fin?.targetMeanPrice ?? currentPrice;
+    const currentPrice = price?.regularMarketPrice ?? bars[bars.length - 1]?.close ?? 0;
+    const priceTarget  = fin?.targetMeanPrice ?? currentPrice;
     const upside = currentPrice > 0
       ? parseFloat(((priceTarget - currentPrice) / currentPrice * 100).toFixed(1))
       : 0;
 
-    const forecastModel = computeForecast(history);
+    // S&P500 3-month return
+    const spFirst = spHistory[0]?.close ?? null;
+    const spLast  = spHistory[spHistory.length - 1]?.close ?? null;
+    const sp500Return3m = spFirst && spLast
+      ? (spLast - spFirst) / spFirst
+      : null;
 
+    // Assemble inputs
+    const fundInput: FundamentalInput = {
+      revenueGrowth:    (fin?.revenueGrowth as number | null | undefined) ?? null,
+      earningsGrowth:   (fin?.earningsGrowth as number | null | undefined) ?? null,
+      operatingMargins: (fin?.operatingMargins as number | null | undefined) ?? null,
+      analystUpside:    upside,
+      recommendation:   mapRecommendation(fin?.recommendationMean as number | null | undefined),
+    };
+
+    const macroInput: MacroInput = {
+      yield10Y:      (tnxQuote as { regularMarketPrice?: number } | null)?.regularMarketPrice ?? null,
+      vix:           (vixQuote as { regularMarketPrice?: number } | null)?.regularMarketPrice ?? null,
+      sp500Return3m,
+    };
+
+    // Run multi-factor model
+    const forecastModel = computeMultiFactorForecast(bars, fundInput, macroInput);
+
+    // Claude narrative
     const analysis = await generateAnalysis(
       ticker,
       price?.longName ?? price?.shortName ?? ticker,
       currentPrice,
-      priceTarget,
-      upside,
-      mapRecommendation(fin?.recommendationMean),
-      parseFloat((price?.regularMarketChangePercent ?? 0).toFixed(2)),
-      price?.regularMarketPrice ? (fin?.currentPrice ?? null) : null,
-      fin?.numberOfAnalystOpinions ?? 0,
-      history,
-      forecastModel
+      forecastModel,
+      fundInput,
+      macroInput,
     );
 
     const entry: CacheEntry = {
@@ -161,18 +189,9 @@ export async function GET(
     };
 
     forecastCache.set(ticker, entry);
-
-    return NextResponse.json({
-      forecast: forecastModel,
-      analysis,
-      analysisDate: entry.analysisDate,
-      cached: false,
-    });
+    return NextResponse.json({ forecast: entry.forecast, analysis, analysisDate: entry.analysisDate, cached: false });
   } catch (error) {
     console.error(`Forecast error for ${ticker}:`, error);
-    return NextResponse.json(
-      { error: `Failed to generate forecast for ${ticker}`, detail: String(error) },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: `Failed to generate forecast for ${ticker}`, detail: String(error) }, { status: 500 });
   }
 }
