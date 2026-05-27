@@ -10,8 +10,26 @@ const EDGAR_HEADERS = { 'User-Agent': 'StockVision/1.0 marco.aedoa@gmail.com' };
 
 interface XbrlUnit { accn: string; val: number; end: string; start?: string; form: string }
 
-// Fetch one XBRL concept and return the value for the given accession number
-async function fetchConcept(cik: string, concept: string, accession: string): Promise<{ concept: string; val: number; end: string } | null> {
+interface PeriodEntry { val: number; start: string; end: string }
+interface ConceptData {
+  quarterly:           PeriodEntry | null;  // ~90-day period
+  ytd:                 PeriodEntry | null;  // year-to-date (Q2=180d, Q3=270d)
+  annual:              PeriodEntry | null;  // ~365-day period
+  priorYearQuarterly:  PeriodEntry | null;  // same quarter, prior year
+  instant:             { val: number; end: string } | null; // balance sheet point-in-time
+}
+
+function daysBetween(a: string, b: string): number {
+  return Math.round((new Date(b).getTime() - new Date(a).getTime()) / 86_400_000);
+}
+
+function subtractOneYear(date: string): string {
+  const d = new Date(date + 'T00:00:00Z');
+  d.setUTCFullYear(d.getUTCFullYear() - 1);
+  return d.toISOString().split('T')[0];
+}
+
+async function fetchConceptData(cik: string, concept: string, accession: string): Promise<ConceptData | null> {
   try {
     const res = await fetch(
       `https://data.sec.gov/api/xbrl/companyconcept/CIK${cik}/us-gaap/${concept}.json`,
@@ -19,22 +37,46 @@ async function fetchConcept(cik: string, concept: string, accession: string): Pr
     );
     if (!res.ok) return null;
     const data = await res.json();
-
-    // Revenue can be in USD, EPS in USD/shares
     const units: XbrlUnit[] = data.units?.USD ?? data.units?.['USD/shares'] ?? [];
-    const entry = units.find(u => u.accn === accession);
-    if (!entry) return null;
 
-    return { concept, val: entry.val, end: entry.end };
+    const filingEntries = units.filter(u => u.accn === accession);
+    if (filingEntries.length === 0) return null;
+
+    let quarterly: PeriodEntry | null = null;
+    let ytd: PeriodEntry | null = null;
+    let annual: PeriodEntry | null = null;
+    let instant: { val: number; end: string } | null = null;
+
+    for (const e of filingEntries) {
+      if (!e.start) {
+        if (!instant) instant = { val: e.val, end: e.end };
+        continue;
+      }
+      const days = daysBetween(e.start, e.end);
+      if (days >= 55 && days <= 120)  { quarterly = { val: e.val, start: e.start, end: e.end }; }
+      else if (days >= 150 && days <= 300) { ytd = { val: e.val, start: e.start, end: e.end }; }
+      else if (days >= 330 && days <= 400) { annual   = { val: e.val, start: e.start, end: e.end }; }
+    }
+
+    // Prior-year same quarter: find any entry with same period length shifted 1 year
+    let priorYearQuarterly: PeriodEntry | null = null;
+    if (quarterly) {
+      const pyStart = subtractOneYear(quarterly.start);
+      const pyEnd   = subtractOneYear(quarterly.end);
+      const match   = units.find(u => u.start === pyStart && u.end === pyEnd);
+      if (match) priorYearQuarterly = { val: match.val, start: pyStart, end: pyEnd };
+    }
+
+    const hasData = quarterly || ytd || annual || instant;
+    return hasData ? { quarterly, ytd, annual, priorYearQuarterly, instant } : null;
   } catch {
     return null;
   }
 }
 
-// Try a list of concept aliases and return the first one that has data
-async function fetchFirstMatch(cik: string, aliases: string[], accession: string) {
+async function fetchFirstConceptData(cik: string, aliases: string[], accession: string): Promise<ConceptData | null> {
   for (const alias of aliases) {
-    const result = await fetchConcept(cik, alias, accession);
+    const result = await fetchConceptData(cik, alias, accession);
     if (result) return result;
   }
   return null;
@@ -43,42 +85,71 @@ async function fetchFirstMatch(cik: string, aliases: string[], accession: string
 function fmtVal(val: number, isEPS = false): string {
   if (isEPS) return `$${val.toFixed(2)}`;
   const abs = Math.abs(val);
-  if (abs >= 1e9) return `$${(val / 1e9).toFixed(2)}B`;
-  if (abs >= 1e6) return `$${(val / 1e6).toFixed(0)}M`;
-  return `$${val.toFixed(0)}`;
+  const sign = val < 0 ? '-' : '';
+  if (abs >= 1e9) return `${sign}$${(Math.abs(val) / 1e9).toFixed(2)}B`;
+  if (abs >= 1e6) return `${sign}$${(Math.abs(val) / 1e6).toFixed(0)}M`;
+  return `${sign}$${Math.abs(val).toFixed(0)}`;
 }
 
-async function buildFinancialSummary(cik: string, accession: string, form: string): Promise<string> {
-  // Fetch key metrics in parallel (group by type to reduce requests)
+function yoy(current: number, prior: number): string {
+  const pct = ((current - prior) / Math.abs(prior)) * 100;
+  return `${pct >= 0 ? '+' : ''}${pct.toFixed(1)}% YoY`;
+}
+
+function formatConceptBlock(label: string, d: ConceptData, isEPS = false): string {
+  const lines: string[] = [`**${label}**`];
+  if (d.quarterly) {
+    const yoyStr = d.priorYearQuarterly ? ` (${yoy(d.quarterly.val, d.priorYearQuarterly.val)})` : '';
+    lines.push(`  - Trimestre (${d.quarterly.start} → ${d.quarterly.end}): **${fmtVal(d.quarterly.val, isEPS)}**${yoyStr}`);
+  }
+  if (d.priorYearQuarterly) {
+    lines.push(`  - Mismo trimestre año anterior: ${fmtVal(d.priorYearQuarterly.val, isEPS)}`);
+  }
+  if (d.ytd) {
+    lines.push(`  - Acumulado año (${d.ytd.start} → ${d.ytd.end}): ${fmtVal(d.ytd.val, isEPS)}`);
+  }
+  if (d.annual) {
+    lines.push(`  - Año completo (${d.annual.start} → ${d.annual.end}): **${fmtVal(d.annual.val, isEPS)}**`);
+  }
+  if (d.instant) {
+    lines.push(`  - Saldo al ${d.instant.end}: ${fmtVal(d.instant.val, isEPS)}`);
+  }
+  return lines.join('\n');
+}
+
+async function buildFinancialSummary(cik: string, accession: string, form: string, ticker: string): Promise<string> {
   const [revenue, netIncome, operatingIncome, grossProfit, eps, rnd, cash] = await Promise.all([
-    fetchFirstMatch(cik, [
+    fetchFirstConceptData(cik, [
       'RevenueFromContractWithCustomerExcludingAssessedTax',
       'Revenues',
       'SalesRevenueNet',
       'SalesRevenueGoodsNet',
     ], accession),
-    fetchConcept(cik, 'NetIncomeLoss', accession),
-    fetchConcept(cik, 'OperatingIncomeLoss', accession),
-    fetchConcept(cik, 'GrossProfit', accession),
-    fetchConcept(cik, 'EarningsPerShareDiluted', accession),
-    fetchConcept(cik, 'ResearchAndDevelopmentExpense', accession),
-    fetchConcept(cik, 'CashAndCashEquivalentsAtCarryingValue', accession),
+    fetchConceptData(cik, 'NetIncomeLoss', accession),
+    fetchConceptData(cik, 'OperatingIncomeLoss', accession),
+    fetchConceptData(cik, 'GrossProfit', accession),
+    fetchConceptData(cik, 'EarningsPerShareDiluted', accession),
+    fetchConceptData(cik, 'ResearchAndDevelopmentExpense', accession),
+    fetchFirstConceptData(cik, [
+      'CashAndCashEquivalentsAtCarryingValue',
+      'CashCashEquivalentsAndShortTermInvestments',
+    ], accession),
   ]);
 
-  const metrics: string[] = [];
-  const period = revenue?.end ?? netIncome?.end ?? '';
+  const blocks: string[] = [
+    `**Empresa:** ${ticker}  |  **Reporte:** ${form}  |  **Accession:** ${accession}`,
+    '',
+  ];
 
-  if (revenue)          metrics.push(`Ingresos: ${fmtVal(revenue.val)}`);
-  if (grossProfit)      metrics.push(`Utilidad bruta: ${fmtVal(grossProfit.val)}`);
-  if (operatingIncome)  metrics.push(`Ingreso operacional: ${fmtVal(operatingIncome.val)}`);
-  if (netIncome)        metrics.push(`Utilidad neta: ${fmtVal(netIncome.val)}`);
-  if (eps)              metrics.push(`EPS diluido: ${fmtVal(eps.val, true)}`);
-  if (rnd)              metrics.push(`Gasto I+D: ${fmtVal(rnd.val)}`);
-  if (cash)             metrics.push(`Caja y equivalentes: ${fmtVal(cash.val)}`);
+  if (revenue)         blocks.push(formatConceptBlock('Ingresos / Revenues', revenue));
+  if (grossProfit)     blocks.push(formatConceptBlock('Utilidad Bruta', grossProfit));
+  if (operatingIncome) blocks.push(formatConceptBlock('Ingreso Operacional', operatingIncome));
+  if (netIncome)       blocks.push(formatConceptBlock('Utilidad Neta', netIncome));
+  if (eps)             blocks.push(formatConceptBlock('EPS Diluido', eps, true));
+  if (rnd)             blocks.push(formatConceptBlock('Gasto I+D', rnd));
+  if (cash)            blocks.push(formatConceptBlock('Caja y Equivalentes', cash));
 
-  if (metrics.length === 0) return '';
-
-  return `Período reportado: ${period} (${form})\n\nMétricas financieras del reporte:\n${metrics.join('\n')}`;
+  return blocks.length > 2 ? blocks.join('\n') : '';
 }
 
 export async function GET(
@@ -111,37 +182,53 @@ export async function GET(
     return NextResponse.json({ error: 'ANTHROPIC_API_KEY not configured' }, { status: 500 });
   }
 
-  // Fetch structured XBRL financial data for this specific filing
   let financialSummary = '';
   try {
-    financialSummary = await buildFinancialSummary(cik, accession, form);
+    financialSummary = await buildFinancialSummary(cik, accession, form, ticker);
   } catch (err) {
     console.warn(`XBRL fetch failed for ${ticker} ${accession}:`, err);
   }
 
   const prompt = financialSummary
-    ? `Eres un analista financiero senior especializado en reportes SEC.
+    ? `Eres un analista financiero senior especializado en la lectura de reportes regulatorios ante la SEC.
 
-Analiza los siguientes datos financieros reales del reporte ${form} de ${ticker} (fecha de presentación: ${date}), extraídos directamente del XBRL de EDGAR.
+A continuación se presentan datos financieros reales extraídos directamente del XBRL de EDGAR para el reporte ${form} de ${ticker} (presentado: ${date}). Los datos incluyen tanto el período trimestral como acumulado anual y comparación con el año anterior.
 
+---
 ${financialSummary}
+---
 
-Proporciona un análisis claro y conciso en español (máx 350 palabras) que incluya:
-1. **Resultados clave**: interpreta los números anteriores, indica si son positivos o negativos y por qué
-2. **Métricas de rentabilidad**: márgenes (si es posible calcularlos con los datos disponibles)
-3. **Fortalezas y riesgos**: qué destacar de este período basándose en los números
-4. **Veredicto**: una conclusión breve (máx 2 líneas) sobre la salud financiera del período
+Escribe un análisis completo y detallado en **español** usando formato **Markdown**. El análisis debe incluir:
 
-Sé directo con los números, sin inventar datos que no estén en el listado.`
-    : `Eres un analista financiero senior. Escribe un análisis conciso en español (máx 300 palabras) del reporte ${form} de ${ticker} presentado el ${date}.
+## 1. Resultados Trimestrales
+Interpreta en profundidad los números del trimestre. Compara con el mismo trimestre del año anterior (YoY). Calcula márgenes si los datos lo permiten (margen bruto = utilidad bruta / ingresos, margen neto = utilidad neta / ingresos).
 
-Incluye contexto del período, tendencias típicas de esta empresa en ese trimestre, factores del sector, y una conclusión breve. Aclara que el análisis está basado en conocimiento general de la empresa.`;
+## 2. Resultados Anuales / Acumulados
+Analiza el desempeño acumulado del año. ¿Va en línea con expectativas? ¿Qué tendencia muestra el año completo vs períodos anteriores?
+
+## 3. Aspectos Destacados y Riesgos
+- ¿Qué fortalezas muestra este reporte?
+- ¿Qué señales de alerta o riesgos se identifican en los números?
+
+## 4. Veredicto
+Una conclusión directa sobre la salud financiera del período.
+
+**Importante:** Usa exclusivamente los datos provistos. No inventes números que no estén en el listado. Si un dato no está disponible, dilo explícitamente.`
+    : `Eres un analista financiero senior. Escribe un análisis detallado en **español** usando formato **Markdown** del reporte ${form} de ${ticker} presentado el ${date}.
+
+El análisis debe incluir secciones claras para:
+## 1. Resultados Trimestrales
+## 2. Resultados Anuales / Acumulados
+## 3. Aspectos Destacados y Riesgos
+## 4. Veredicto
+
+Basado en tu conocimiento general de la empresa y su sector. Aclara que el análisis es de contexto general.`;
 
   try {
     const client = new Anthropic({ apiKey });
     const msg = await client.messages.create({
       model: 'claude-sonnet-4-6',
-      max_tokens: 700,
+      max_tokens: 2000,
       messages: [{ role: 'user', content: prompt }],
     });
 

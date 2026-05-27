@@ -2,6 +2,8 @@
 
 import { useState, useEffect } from 'react';
 import { FileText, ExternalLink, Brain, ChevronDown, ChevronUp, RefreshCw, Loader2 } from 'lucide-react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import type { SECFiling } from '@/app/api/stocks/[ticker]/sec/route';
 
 interface SECFilingsProps {
@@ -136,9 +138,25 @@ function FilingRow({ filing, ticker }: { filing: SECFiling; ticker: string }) {
               </button>
             </div>
           </div>
-          <div className="text-sm text-gray-700 dark:text-gray-300 leading-relaxed whitespace-pre-line prose-sm">
+          <ReactMarkdown
+            remarkPlugins={[remarkGfm]}
+            components={{
+              h1: ({ children }) => <h1 className="text-base font-bold text-gray-900 dark:text-white mt-4 mb-2 first:mt-0">{children}</h1>,
+              h2: ({ children }) => <h2 className="text-sm font-bold text-gray-900 dark:text-white mt-4 mb-1.5 first:mt-0 border-b border-violet-200 dark:border-violet-800/40 pb-1">{children}</h2>,
+              h3: ({ children }) => <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-200 mt-3 mb-1">{children}</h3>,
+              p: ({ children }) => <p className="text-sm text-gray-700 dark:text-gray-300 leading-relaxed mb-3 last:mb-0">{children}</p>,
+              strong: ({ children }) => <strong className="font-semibold text-gray-900 dark:text-white">{children}</strong>,
+              em: ({ children }) => <em className="italic text-gray-600 dark:text-gray-400">{children}</em>,
+              ul: ({ children }) => <ul className="list-disc list-inside mb-3 space-y-1 text-sm text-gray-700 dark:text-gray-300">{children}</ul>,
+              ol: ({ children }) => <ol className="list-decimal list-inside mb-3 space-y-1 text-sm text-gray-700 dark:text-gray-300">{children}</ol>,
+              li: ({ children }) => <li className="leading-relaxed">{children}</li>,
+              hr: () => <hr className="my-3 border-violet-200 dark:border-violet-800/40" />,
+              blockquote: ({ children }) => <blockquote className="border-l-2 border-violet-400 pl-3 italic text-gray-600 dark:text-gray-400 my-2">{children}</blockquote>,
+              code: ({ children }) => <code className="bg-gray-100 dark:bg-gray-800 px-1 py-0.5 rounded text-xs font-mono">{children}</code>,
+            }}
+          >
             {analysisData.analysis}
-          </div>
+          </ReactMarkdown>
           <p className="text-xs text-gray-400 dark:text-gray-500 mt-3">
             Solo con fines informativos. No constituye asesoramiento financiero.
           </p>
