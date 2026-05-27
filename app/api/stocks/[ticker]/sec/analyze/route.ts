@@ -213,7 +213,10 @@ Analiza el desempeño acumulado del año. ¿Va en línea con expectativas? ¿Qu�
 ## 4. Veredicto
 Una conclusión directa sobre la salud financiera del período.
 
-**Importante:** Usa exclusivamente los datos provistos. No inventes números que no estén en el listado. Si un dato no está disponible, dilo explícitamente.`
+**Reglas de formato:**
+- Escribe los cálculos en texto plano, por ejemplo: "Margen bruto: $56B / $82B = **67.6%**"
+- **No uses LaTeX** ni notación matemática con $$ o \\frac o \\text. Solo texto y Markdown estándar.
+- Usa exclusivamente los datos provistos. No inventes números que no estén en el listado. Si un dato no está disponible, dilo explícitamente.`
     : `Eres un analista financiero senior. Escribe un análisis detallado en **español** usando formato **Markdown** del reporte ${form} de ${ticker} presentado el ${date}.
 
 El análisis debe incluir secciones claras para:
@@ -222,7 +225,8 @@ El análisis debe incluir secciones claras para:
 ## 3. Aspectos Destacados y Riesgos
 ## 4. Veredicto
 
-Basado en tu conocimiento general de la empresa y su sector. Aclara que el análisis es de contexto general.`;
+Basado en tu conocimiento general de la empresa y su sector. Aclara que el análisis es de contexto general.
+**No uses LaTeX** ni notación matemática con $$ o \\frac. Solo texto y Markdown estándar.`;
 
   try {
     const client = new Anthropic({ apiKey });
