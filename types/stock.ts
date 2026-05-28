@@ -12,10 +12,14 @@ export interface AnalystTargets {
 
 export type Recommendation = 'Strong Buy' | 'Buy' | 'Hold' | 'Sell' | 'Strong Sell';
 
+export type Market = 'US' | 'CL';
+
 export interface Stock {
   ticker: string;
   name: string;
   sector: string;
+  market: Market;
+  currency: 'USD' | 'CLP';
   currentPrice: number;
   priceTarget: number;
   upside: number;

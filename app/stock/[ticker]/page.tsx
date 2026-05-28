@@ -14,6 +14,7 @@ import { formatPercent } from '@/lib/calculations';
 import StockChart from '@/components/StockChart';
 import AnalystHistory from '@/components/AnalystHistory';
 import SECFilings from '@/components/SECFilings';
+import FinancialStatements from '@/components/FinancialStatements';
 
 interface ForecastResponse {
   forecast: ForecastModel;
@@ -41,12 +42,12 @@ function MetricCard({ label, value, sub }: MetricCardProps) {
   );
 }
 
-function ForecastMetric({ label, value, pct }: { label: string; value: number; pct: number }) {
+function ForecastMetric({ label, value, pct, currency }: { label: string; value: number; pct: number; currency: string }) {
   const positive = pct >= 0;
   return (
     <div className="text-center bg-gray-50 dark:bg-gray-800/60 rounded-xl p-4">
       <p className="text-xs text-gray-500 dark:text-gray-400 mb-1">{label}</p>
-      <p className="text-xl font-bold text-gray-900 dark:text-white">${value.toFixed(0)}</p>
+      <p className="text-xl font-bold text-gray-900 dark:text-white">{fmtPrice(value, currency)}</p>
       <p className={`text-sm font-semibold ${positive ? 'text-emerald-500' : 'text-red-400'}`}>
         {formatPercent(pct)}
       </p>
@@ -170,6 +171,13 @@ function FactorBreakdown({ fs, annualReturnPct, annualVolPct }: {
       )}
     </div>
   );
+}
+
+function fmtPrice(price: number, currency: string): string {
+  if (currency === 'CLP') {
+    return price.toLocaleString('es-CL', { maximumFractionDigits: 0 }) + ' CLP';
+  }
+  return '$' + price.toFixed(2);
 }
 
 function StockSkeleton() {
@@ -310,7 +318,7 @@ export default function StockDetailPage({ params }: { params: Promise<{ ticker: 
 
           <div className="ml-auto flex items-center gap-4">
             <div className="text-right">
-              <p className="text-lg font-bold font-mono text-gray-900 dark:text-white">${stock.currentPrice.toFixed(2)}</p>
+              <p className="text-lg font-bold font-mono text-gray-900 dark:text-white">{fmtPrice(stock.currentPrice, stock.currency ?? 'USD')}</p>
               <p className={`text-xs font-semibold ${changeColor} flex items-center justify-end gap-1`}>
                 <ChangeIcon size={11} />
                 {formatPercent(stock.change24h)} hoy
@@ -327,7 +335,7 @@ export default function StockDetailPage({ params }: { params: Promise<{ ticker: 
         <div className="flex flex-wrap items-center gap-6">
           <div>
             <p className="text-4xl font-bold font-mono text-gray-900 dark:text-white">
-              ${stock.currentPrice.toFixed(2)}
+              {fmtPrice(stock.currentPrice, stock.currency ?? 'USD')}
             </p>
             <div className={`flex items-center gap-1.5 mt-1 ${changeColor}`}>
               <ChangeIcon size={16} />
@@ -337,7 +345,7 @@ export default function StockDetailPage({ params }: { params: Promise<{ ticker: 
           <div className="flex gap-6">
             <div>
               <p className="text-xs text-gray-500 dark:text-gray-400">Precio objetivo</p>
-              <p className="text-2xl font-bold font-mono text-gray-900 dark:text-white">${stock.priceTarget.toFixed(2)}</p>
+              <p className="text-2xl font-bold font-mono text-gray-900 dark:text-white">{fmtPrice(stock.priceTarget, stock.currency ?? 'USD')}</p>
               <p className={`text-sm font-bold ${upsideColor}`}>{formatPercent(stock.upside)} upside</p>
             </div>
             <div>
@@ -372,9 +380,9 @@ export default function StockDetailPage({ params }: { params: Promise<{ ticker: 
           </div>
           <div className="space-y-3">
             <div className="flex justify-between text-xs text-gray-500 dark:text-gray-400">
-              <span>Mín: ${stock.analystTargets.low.toFixed(0)}</span>
-              <span>Consenso: ${stock.analystTargets.average.toFixed(0)}</span>
-              <span>Máx: ${stock.analystTargets.high.toFixed(0)}</span>
+              <span>Mín: {fmtPrice(stock.analystTargets.low, stock.currency ?? 'USD')}</span>
+              <span>Consenso: {fmtPrice(stock.analystTargets.average, stock.currency ?? 'USD')}</span>
+              <span>Máx: {fmtPrice(stock.analystTargets.high, stock.currency ?? 'USD')}</span>
             </div>
             <div className="relative h-3 bg-gray-200 dark:bg-gray-700 rounded-full">
               <div className="absolute inset-0 h-3 rounded-full bg-gradient-to-r from-red-400 via-yellow-400 to-emerald-400" />
@@ -415,7 +423,7 @@ export default function StockDetailPage({ params }: { params: Promise<{ ticker: 
                 Basado en <strong>{stock.numAnalysts}</strong> analista{stock.numAnalysts !== 1 ? 's' : ''}
               </p>
               <p className="text-xs text-gray-500 dark:text-gray-400">
-                Target promedio 12 meses: ${stock.analystTargets.average.toFixed(2)}
+                Target promedio 12 meses: {fmtPrice(stock.analystTargets.average, stock.currency ?? 'USD')}
               </p>
             </div>
           </div>
@@ -480,9 +488,9 @@ export default function StockDetailPage({ params }: { params: Promise<{ ticker: 
                 </span>
               </div>
               <div className="grid grid-cols-3 gap-4">
-                <ForecastMetric label="30 días" value={forecastData.forecast.expected30d} pct={forecastData.forecast.return30d} />
-                <ForecastMetric label="60 días" value={forecastData.forecast.expected60d} pct={(forecastData.forecast.expected60d - stock.currentPrice) / stock.currentPrice * 100} />
-                <ForecastMetric label="90 días" value={forecastData.forecast.expected90d} pct={forecastData.forecast.return90d} />
+                <ForecastMetric label="30 días" value={forecastData.forecast.expected30d} pct={forecastData.forecast.return30d} currency={stock.currency ?? 'USD'} />
+                <ForecastMetric label="60 días" value={forecastData.forecast.expected60d} pct={(forecastData.forecast.expected60d - stock.currentPrice) / stock.currentPrice * 100} currency={stock.currency ?? 'USD'} />
+                <ForecastMetric label="90 días" value={forecastData.forecast.expected90d} pct={forecastData.forecast.return90d} currency={stock.currency ?? 'USD'} />
               </div>
               <p className="text-xs text-gray-400 dark:text-gray-500 mt-4">
                 {forecastData.forecast.method ?? 'Modelo estadístico'} · Log-normal · IC 90%
@@ -525,8 +533,19 @@ export default function StockDetailPage({ params }: { params: Promise<{ ticker: 
           </div>
         )}
 
-        {/* SEC Filings */}
-        <SECFilings ticker={ticker} />
+        {/* Financial Reports */}
+        {stock.market === 'CL' ? (
+          <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl p-5">
+            <div className="flex items-center gap-2 mb-4">
+              <BarChart3 size={15} className="text-emerald-500" />
+              <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Resultados Financieros</h3>
+              <span className="text-xs bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 px-1.5 py-0.5 rounded">CMF · Yahoo Finance</span>
+            </div>
+            <FinancialStatements ticker={ticker} currency={stock.currency ?? 'CLP'} />
+          </div>
+        ) : (
+          <SECFilings ticker={ticker} />
+        )}
 
         {/* Analyst history */}
         <AnalystHistory ticker={ticker} />

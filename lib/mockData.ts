@@ -195,6 +195,8 @@ export const STOCKS: Stock[] = stockDefs.map(def => ({
   ticker: def.ticker,
   name: def.name,
   sector: def.sector,
+  market: 'US' as const,
+  currency: 'USD' as const,
   currentPrice: def.currentPrice,
   priceTarget: def.priceTarget,
   upside: parseFloat(((def.priceTarget - def.currentPrice) / def.currentPrice * 100).toFixed(1)),

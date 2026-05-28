@@ -3,7 +3,7 @@
 import { useState, useMemo, useCallback, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { STOCKS as MOCK_STOCKS } from '@/lib/mockData';
-import { Stock, SortField, SortDirection, Filters, Recommendation } from '@/types/stock';
+import { Stock, SortField, SortDirection, Filters, Recommendation, Market } from '@/types/stock';
 import Header from '@/components/Header';
 import ControlPanel from '@/components/ControlPanel';
 import OpportunitiesHighlight from '@/components/OpportunitiesHighlight';
@@ -55,6 +55,7 @@ export default function Dashboard() {
   const [filters, setFilters] = useState<Filters>(DEFAULT_FILTERS);
   const [lastUpdated, setLastUpdated] = useState(new Date());
   const [isLoading, setIsLoading] = useState(false);
+  const [marketFilter, setMarketFilter] = useState<'all' | Market>('all');
 
   const fetchStocks = useCallback(async () => {
     setIsLoading(true);
@@ -103,6 +104,7 @@ export default function Dashboard() {
     const maxPE = filters.maxPE !== '' ? parseFloat(filters.maxPE) : Infinity;
 
     const filtered = stocks.filter(s => {
+      if (marketFilter !== 'all' && s.market !== marketFilter) return false;
       if (search && !s.ticker.toLowerCase().includes(search) && !s.name.toLowerCase().includes(search)) return false;
       if (s.upside < minUpside || s.upside > maxUpside) return false;
       if (filters.minPE || filters.maxPE) {
@@ -113,7 +115,7 @@ export default function Dashboard() {
       return true;
     });
 
-    return filtered.sort((a, b) => {
+    return [...filtered].sort((a, b) => {
       let aVal: number, bVal: number;
       switch (sortField) {
         case 'upside': aVal = a.upside; bVal = b.upside; break;
@@ -125,7 +127,7 @@ export default function Dashboard() {
       }
       return sortDirection === 'asc' ? aVal - bVal : bVal - aVal;
     });
-  }, [stocks, filters, sortField, sortDirection]);
+  }, [stocks, filters, sortField, sortDirection, marketFilter]);
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-950">
@@ -137,11 +139,24 @@ export default function Dashboard() {
       />
 
       <main className="max-w-screen-2xl mx-auto px-4 sm:px-6 py-6 space-y-5">
-        <div>
-          <h2 className="text-xl font-bold text-gray-900 dark:text-white">Investment Opportunities</h2>
-          <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">
-            Top 20 US stocks ranked by analyst consensus and upside potential
-          </p>
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+          <div>
+            <h2 className="text-xl font-bold text-gray-900 dark:text-white">Oportunidades de Inversión</h2>
+            <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">
+              {stocks.filter(s => s.market === 'US').length} acciones EE.UU. · {stocks.filter(s => s.market === 'CL').length} acciones Chile (IPSA)
+            </p>
+          </div>
+          <div className="flex gap-1 bg-gray-100 dark:bg-gray-800 rounded-lg p-1 self-start sm:self-auto">
+            {([['all', 'Todos'], ['US', '🇺🇸 EE.UU.'], ['CL', '🇨🇱 Chile']] as const).map(([val, label]) => (
+              <button
+                key={val}
+                onClick={() => setMarketFilter(val)}
+                className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors whitespace-nowrap ${marketFilter === val ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'}`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
         </div>
 
         {dataSource === 'loading' ? (
@@ -160,7 +175,10 @@ export default function Dashboard() {
             ))}
           </div>
         ) : (
-          <OpportunitiesHighlight stocks={stocks} onSelectStock={s => navigateToStock(s, router)} />
+          <OpportunitiesHighlight
+            stocks={marketFilter === 'all' ? stocks : stocks.filter(s => s.market === marketFilter)}
+            onSelectStock={s => navigateToStock(s, router)}
+          />
         )}
 
         <div className="space-y-3">
