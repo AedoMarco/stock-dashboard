@@ -31,3 +31,32 @@ export function formatPercent(value: number): string {
   const sign = value >= 0 ? '+' : '';
   return `${sign}${value.toFixed(2)}%`;
 }
+
+/** Largest peak-to-trough decline over the series, as a negative percentage (0 if the series never fell). */
+export function calculateMaxDrawdown(prices: HistoricalPrice[]): number {
+  if (prices.length < 2) return 0;
+  let peak = prices[0].close;
+  let maxDrawdown = 0;
+  for (const p of prices) {
+    if (p.close > peak) peak = p.close;
+    const drawdown = ((p.close - peak) / peak) * 100;
+    if (drawdown < maxDrawdown) maxDrawdown = drawdown;
+  }
+  return parseFloat(maxDrawdown.toFixed(2));
+}
+
+/** % change from the closing price ~`days` calendar days ago to the last close. Null if there isn't enough history. */
+export function calculateChangeOverDays(prices: HistoricalPrice[], days: number): number | null {
+  if (prices.length < 2) return null;
+  const last = prices[prices.length - 1];
+  const targetDate = new Date(last.date);
+  targetDate.setDate(targetDate.getDate() - days);
+
+  let reference: HistoricalPrice | null = null;
+  for (const p of prices) {
+    if (new Date(p.date) <= targetDate) reference = p;
+    else break;
+  }
+  if (!reference || reference.close === 0) return null;
+  return parseFloat(((last.close - reference.close) / reference.close * 100).toFixed(2));
+}

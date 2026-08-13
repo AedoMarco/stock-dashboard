@@ -365,11 +365,21 @@ export default function StockDetailPage({ params }: { params: Promise<{ ticker: 
         </div>
 
         {/* Metric cards */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
           <MetricCard label="P/E Ratio"     value={stock.pe !== null ? stock.pe.toFixed(1) : 'N/A'} sub="Price / Earnings" />
           <MetricCard label="Market Cap"    value={stock.marketCap}    sub="Capitalización total" />
           <MetricCard label="Volumen (24h)" value={stock.volume}       sub="Acciones negociadas" />
           <MetricCard label="Analistas"     value={`${stock.numAnalysts}`} sub={`cobertura de ${stock.ticker}`} />
+          <MetricCard
+            label="Beta"
+            value={stock.beta !== null ? stock.beta.toFixed(2) : 'N/A'}
+            sub={stock.beta === null ? undefined : stock.beta > 1 ? 'Más volátil que el mercado' : 'Menos volátil que el mercado'}
+          />
+          <MetricCard
+            label="Max Drawdown (12m)"
+            value={stock.maxDrawdown1y !== null ? `${stock.maxDrawdown1y.toFixed(1)}%` : 'N/A'}
+            sub="Mayor caída desde un máximo"
+          />
         </div>
 
         {/* Analyst targets bar */}

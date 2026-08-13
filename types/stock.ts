@@ -24,7 +24,11 @@ export interface Stock {
   priceTarget: number;
   upside: number;
   change24h: number;
+  change30d: number | null;
+  change60d: number | null;
   pe: number | null;
+  beta: number | null;
+  maxDrawdown1y: number | null;
   recommendation: Recommendation;
   historicalPrices: HistoricalPrice[];
   analystTargets: AnalystTargets;
@@ -33,7 +37,7 @@ export interface Stock {
   numAnalysts: number;
 }
 
-export type SortField = 'upside' | 'change24h' | 'pe' | 'currentPrice' | 'priceTarget';
+export type SortField = 'upside' | 'change24h' | 'change30d' | 'change60d' | 'pe' | 'currentPrice' | 'priceTarget' | 'beta' | 'maxDrawdown1y';
 export type SortDirection = 'asc' | 'desc';
 export type DateRange = '3m' | '6m' | '12m';
 

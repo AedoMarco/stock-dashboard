@@ -59,12 +59,14 @@ export default function StockTable({ stocks, sortField, sortDirection, onSort, o
             <tr>
               <th className="pl-4 pr-2 py-3 text-left text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide w-8">#</th>
               <th className="px-3 py-3 text-left text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">Ticker</th>
-              <th className="px-3 py-3 text-left text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide hidden lg:table-cell">Sector</th>
               <Th field="currentPrice" label="Price" sortField={sortField} sortDirection={sortDirection} onSort={onSort} />
               <Th field="priceTarget" label="Target" sortField={sortField} sortDirection={sortDirection} onSort={onSort} />
               <Th field="upside" label="Upside" sortField={sortField} sortDirection={sortDirection} onSort={onSort} />
               <Th field="change24h" label="Day %" sortField={sortField} sortDirection={sortDirection} onSort={onSort} />
-              <Th field="pe" label="P/E" sortField={sortField} sortDirection={sortDirection} onSort={onSort} className="hidden md:table-cell" />
+              <Th field="change30d" label="30D" sortField={sortField} sortDirection={sortDirection} onSort={onSort} className="hidden md:table-cell" />
+              <Th field="change60d" label="60D" sortField={sortField} sortDirection={sortDirection} onSort={onSort} className="hidden md:table-cell" />
+              <Th field="beta" label="Beta" sortField={sortField} sortDirection={sortDirection} onSort={onSort} className="hidden lg:table-cell" />
+              <Th field="maxDrawdown1y" label="Max DD" sortField={sortField} sortDirection={sortDirection} onSort={onSort} className="hidden lg:table-cell" />
               <th className="px-3 py-3 text-left text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide hidden sm:table-cell">Rec.</th>
               <th className="px-3 py-3 text-left text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide hidden xl:table-cell">Mkt Cap</th>
               <th className="px-3 py-3 text-left text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide hidden xl:table-cell">Volume</th>
@@ -73,7 +75,7 @@ export default function StockTable({ stocks, sortField, sortDirection, onSort, o
           <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
             {stocks.length === 0 && (
               <tr>
-                <td colSpan={11} className="px-4 py-12 text-center text-gray-400 dark:text-gray-500">
+                <td colSpan={13} className="px-4 py-12 text-center text-gray-400 dark:text-gray-500">
                   No stocks match the current filters.
                 </td>
               </tr>
@@ -96,7 +98,6 @@ export default function StockTable({ stocks, sortField, sortDirection, onSort, o
                       <p className="text-xs text-gray-500 dark:text-gray-400 hidden sm:block truncate max-w-[120px]">{stock.name}</p>
                     </div>
                   </td>
-                  <td className="px-3 py-3 text-xs text-gray-500 dark:text-gray-400 hidden lg:table-cell">{stock.sector}</td>
                   <td className="px-3 py-3 font-mono font-medium text-gray-900 dark:text-white whitespace-nowrap">
                     ${stock.currentPrice.toFixed(2)}
                   </td>
@@ -111,8 +112,17 @@ export default function StockTable({ stocks, sortField, sortDirection, onSort, o
                   <td className={`px-3 py-3 font-mono text-sm font-medium whitespace-nowrap ${changeColor}`}>
                     {formatPercent(stock.change24h)}
                   </td>
-                  <td className="px-3 py-3 text-gray-600 dark:text-gray-300 hidden md:table-cell">
-                    {stock.pe !== null ? stock.pe.toFixed(1) : <span className="text-gray-400">N/A</span>}
+                  <td className={`px-3 py-3 font-mono text-sm whitespace-nowrap hidden md:table-cell ${stock.change30d === null ? 'text-gray-400' : stock.change30d >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500 dark:text-red-400'}`}>
+                    {stock.change30d !== null ? formatPercent(stock.change30d) : 'N/A'}
+                  </td>
+                  <td className={`px-3 py-3 font-mono text-sm whitespace-nowrap hidden md:table-cell ${stock.change60d === null ? 'text-gray-400' : stock.change60d >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500 dark:text-red-400'}`}>
+                    {stock.change60d !== null ? formatPercent(stock.change60d) : 'N/A'}
+                  </td>
+                  <td className="px-3 py-3 text-gray-600 dark:text-gray-300 hidden lg:table-cell">
+                    {stock.beta !== null ? stock.beta.toFixed(2) : <span className="text-gray-400">N/A</span>}
+                  </td>
+                  <td className="px-3 py-3 font-mono text-sm text-red-500 dark:text-red-400 hidden lg:table-cell">
+                    {stock.maxDrawdown1y !== null ? `${stock.maxDrawdown1y.toFixed(1)}%` : <span className="text-gray-400">N/A</span>}
                   </td>
                   <td className="px-3 py-3 hidden sm:table-cell">
                     <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${REC_BADGE[stock.recommendation]}`}>

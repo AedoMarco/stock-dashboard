@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { STOCKS as MOCK_STOCKS } from '@/lib/mockData';
 import { Stock, SortField, SortDirection, Filters, Recommendation, Market } from '@/types/stock';
 import Header from '@/components/Header';
+import IndicatorsTicker from '@/components/IndicatorsTicker';
 import ControlPanel from '@/components/ControlPanel';
 import OpportunitiesHighlight from '@/components/OpportunitiesHighlight';
 import StockTable from '@/components/StockTable';
@@ -120,9 +121,13 @@ export default function Dashboard() {
       switch (sortField) {
         case 'upside': aVal = a.upside; bVal = b.upside; break;
         case 'change24h': aVal = a.change24h; bVal = b.change24h; break;
+        case 'change30d': aVal = a.change30d ?? -Infinity; bVal = b.change30d ?? -Infinity; break;
+        case 'change60d': aVal = a.change60d ?? -Infinity; bVal = b.change60d ?? -Infinity; break;
         case 'pe': aVal = a.pe ?? -Infinity; bVal = b.pe ?? -Infinity; break;
         case 'currentPrice': aVal = a.currentPrice; bVal = b.currentPrice; break;
         case 'priceTarget': aVal = a.priceTarget; bVal = b.priceTarget; break;
+        case 'beta': aVal = a.beta ?? -Infinity; bVal = b.beta ?? -Infinity; break;
+        case 'maxDrawdown1y': aVal = a.maxDrawdown1y ?? -Infinity; bVal = b.maxDrawdown1y ?? -Infinity; break;
         default: aVal = a.upside; bVal = b.upside;
       }
       return sortDirection === 'asc' ? aVal - bVal : bVal - aVal;
@@ -137,6 +142,7 @@ export default function Dashboard() {
         isLoading={isLoading}
         dataSource={dataSource}
       />
+      <IndicatorsTicker />
 
       <main className="max-w-screen-2xl mx-auto px-4 sm:px-6 py-6 space-y-5">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">

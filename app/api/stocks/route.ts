@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import YahooFinanceClass from 'yahoo-finance2';
 import type { Stock, Recommendation, Market } from '@/types/stock';
+import { calculateMaxDrawdown, calculateChangeOverDays } from '@/lib/calculations';
 
 const yf = new YahooFinanceClass({ suppressNotices: ['yahooSurvey'] });
 
@@ -65,12 +66,38 @@ function mapRecommendation(mean?: number | null): Recommendation {
   return 'Strong Sell';
 }
 
+interface HistoricalMetrics { maxDrawdown1y: number | null; change30d: number | null; change60d: number | null }
+
+async function fetchHistoricalMetrics(ticker: string): Promise<HistoricalMetrics> {
+  try {
+    const end = new Date();
+    const start = new Date();
+    start.setFullYear(start.getFullYear() - 1);
+    const raw = await yf.historical(ticker, {
+      period1: start.toISOString().split('T')[0],
+      period2: end.toISOString().split('T')[0],
+      interval: '1d',
+    });
+    const prices = raw
+      .filter(d => d.close != null)
+      .map(d => ({ date: d.date.toISOString().split('T')[0], close: d.close as number }));
+    return {
+      maxDrawdown1y: calculateMaxDrawdown(prices),
+      change30d: calculateChangeOverDays(prices, 30),
+      change60d: calculateChangeOverDays(prices, 60),
+    };
+  } catch {
+    return { maxDrawdown1y: null, change30d: null, change60d: null };
+  }
+}
+
 async function fetchMarket(tickers: string[], market: Market) {
-  const [quotesRaw, summaries] = await Promise.all([
+  const [quotesRaw, summaries, historicalMetrics] = await Promise.all([
     yf.quote(tickers),
     Promise.allSettled(
-      tickers.map(t => yf.quoteSummary(t, { modules: ['financialData'] }))
+      tickers.map(t => yf.quoteSummary(t, { modules: ['financialData', 'defaultKeyStatistics'] }))
     ),
+    Promise.all(tickers.map(fetchHistoricalMetrics)),
   ]);
 
   const quotes = Array.isArray(quotesRaw) ? quotesRaw : [quotesRaw];
@@ -78,9 +105,9 @@ async function fetchMarket(tickers: string[], market: Market) {
 
   return quotes.map((q, i) => {
     const ticker = tickers[i];
-    const fin = summaries[i].status === 'fulfilled'
-      ? summaries[i].value.financialData
-      : null;
+    const summary = summaries[i].status === 'fulfilled' ? summaries[i].value : null;
+    const fin = summary?.financialData ?? null;
+    const keyStats = summary?.defaultKeyStatistics ?? null;
 
     const currentPrice = q.regularMarketPrice ?? 0;
     const priceTarget = fin?.targetMeanPrice ?? currentPrice;
@@ -98,7 +125,11 @@ async function fetchMarket(tickers: string[], market: Market) {
       priceTarget,
       upside,
       change24h: parseFloat((q.regularMarketChangePercent ?? 0).toFixed(2)),
+      change30d: historicalMetrics[i].change30d,
+      change60d: historicalMetrics[i].change60d,
       pe: q.trailingPE ? parseFloat(q.trailingPE.toFixed(1)) : null,
+      beta: keyStats?.beta ? parseFloat(keyStats.beta.toFixed(2)) : null,
+      maxDrawdown1y: historicalMetrics[i].maxDrawdown1y,
       recommendation: mapRecommendation(fin?.recommendationMean),
       marketCap: formatMarketCap(q.marketCap, currency),
       volume: formatVolume(q.regularMarketVolume),

@@ -275,6 +275,16 @@ export default function DetailView({ stock, onClose }: DetailViewProps) {
             <MetricCard label="Market Cap" value={stock.marketCap} sub="Capitalización total" />
             <MetricCard label="Volumen (24h)" value={stock.volume} sub="Acciones negociadas" />
             <MetricCard label="Analistas" value={`${stock.numAnalysts}`} sub={`cobertura de ${stock.ticker}`} />
+            <MetricCard
+              label="Beta"
+              value={stock.beta !== null ? stock.beta.toFixed(2) : 'N/A'}
+              sub={stock.beta === null ? undefined : stock.beta > 1 ? 'Más volátil que el mercado' : 'Menos volátil que el mercado'}
+            />
+            <MetricCard
+              label="Max Drawdown (12m)"
+              value={stock.maxDrawdown1y !== null ? `${stock.maxDrawdown1y.toFixed(1)}%` : 'N/A'}
+              sub="Mayor caída desde un máximo"
+            />
           </div>
 
           {/* Analyst targets */}

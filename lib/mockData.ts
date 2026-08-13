@@ -1,4 +1,5 @@
 import { Stock, HistoricalPrice, Recommendation } from '@/types/stock';
+import { calculateMaxDrawdown, calculateChangeOverDays } from './calculations';
 
 function createRNG(seed: number) {
   let s = seed >>> 0;
@@ -191,25 +192,33 @@ const stockDefs: StockDef[] = [
   },
 ];
 
-export const STOCKS: Stock[] = stockDefs.map(def => ({
-  ticker: def.ticker,
-  name: def.name,
-  sector: def.sector,
-  market: 'US' as const,
-  currency: 'USD' as const,
-  currentPrice: def.currentPrice,
-  priceTarget: def.priceTarget,
-  upside: parseFloat(((def.priceTarget - def.currentPrice) / def.currentPrice * 100).toFixed(1)),
-  change24h: def.change24h,
-  pe: def.pe,
-  recommendation: def.recommendation,
-  marketCap: def.marketCap,
-  volume: def.volume,
-  numAnalysts: def.numAnalysts,
-  analystTargets: {
-    high: def.targetHigh,
-    low: def.targetLow,
-    average: def.priceTarget,
-  },
-  historicalPrices: generateHistoricalPrices(def.ticker, def.currentPrice, def.yearReturn, def.volatility),
-}));
+export const STOCKS: Stock[] = stockDefs.map(def => {
+  const historicalPrices = generateHistoricalPrices(def.ticker, def.currentPrice, def.yearReturn, def.volatility);
+
+  return {
+    ticker: def.ticker,
+    name: def.name,
+    sector: def.sector,
+    market: 'US' as const,
+    currency: 'USD' as const,
+    currentPrice: def.currentPrice,
+    priceTarget: def.priceTarget,
+    upside: parseFloat(((def.priceTarget - def.currentPrice) / def.currentPrice * 100).toFixed(1)),
+    change24h: def.change24h,
+    change30d: calculateChangeOverDays(historicalPrices, 30),
+    change60d: calculateChangeOverDays(historicalPrices, 60),
+    pe: def.pe,
+    beta: parseFloat((def.volatility / 0.011).toFixed(2)),
+    maxDrawdown1y: calculateMaxDrawdown(historicalPrices),
+    recommendation: def.recommendation,
+    marketCap: def.marketCap,
+    volume: def.volume,
+    numAnalysts: def.numAnalysts,
+    analystTargets: {
+      high: def.targetHigh,
+      low: def.targetLow,
+      average: def.priceTarget,
+    },
+    historicalPrices,
+  };
+});
