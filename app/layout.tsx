@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import './globals.css';
 import { ThemeProvider } from '@/context/ThemeContext';
+import AssistantWidget from '@/components/AssistantWidget';
 
 export const metadata: Metadata = {
   title: 'StockVision — US Market Dashboard',
@@ -13,6 +14,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body className="min-h-screen bg-gray-50 dark:bg-gray-950">
         <ThemeProvider>
           {children}
+          <AssistantWidget />
         </ThemeProvider>
       </body>
     </html>
